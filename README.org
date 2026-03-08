@@ -1,0 +1,108 @@
+* cl-mosquitto
+
+~cl-mosquitto~ is an extremely simple library to talk and read to/from devices connected through the mosquitto incarnation of MQTT. ~cl-mosquitto~ depends on the ~cl-json~ library and ... mosquitto itself. The commands ~mosquitto_sub~ and ~mosquitto_pub~ do the real job.
+
+An instance of ~device~ is created for each physical device of the network using ~start-device~. This function takes a name (string as argument).
+
+~cl-mosquitto~ has been used with sbcl and zigbee devices through zigbee2mqtt.
+
+The observer pattern is used to make something usefull with ~cl-mosquitto~. Instances of ~device~ are subject that are observed by instances of ~device-observer~. Method ~attach (device device-observer)~ connects the device observer to the device. Method ~detach (device device-observer)~ removes the observer. The observers are notified calling the ~update (device-observer value)~ method. The value passed to the observer is the alist received from ~mosquitto_sub~ plus the name of the device. For example:   
+
+#+begin_src lisp
+((:DEVICE . "SmartPlug1") (:CURRENT . 0) (:ENERGY . 0) (:ENERGY--MONTH . 0)
+ (:ENERGY--TODAY . 0) (:ENERGY--YESTERDAY . 0) (:LINKQUALITY . 200)
+ (:OUTLET--CONTROL--PROTECT)
+ (:OVERLOAD--PROTECTION (:ENABLE--MAX--VOLTAGE . "ENABLE")
+  (:ENABLE--MIN--CURRENT . "DISABLE") (:ENABLE--MIN--POWER . "DISABLE")
+  (:ENABLE--MIN--VOLTAGE . "DISABLE") (:MAX--CURRENT . 1114112.3)
+  (:MAX--POWER . 0) (:MAX--VOLTAGE . 150994.94) (:MIN--CURRENT . 0)
+  (:MIN--POWER . 0) (:MIN--VOLTAGE . 0.061))
+ (:POWER . 0) (:POWER--ON--BEHAVIOR . "off") (:STATE . "ON")
+ (:UPDATE (:INSTALLED--VERSION . 4098) (:LATEST--RELEASE--NOTES)
+  (:LATEST--SOURCE) (:LATEST--VERSION . 4098) (:STATE . "idle"))
+ (:VOLTAGE . 230.97))  
+#+end_src
+
+#+begin_src lisp
+((:DEVICE . "TempSensor1") (:BATTERY . 100) (:COMFORT--HUMIDITY--MAX . 60)
+ (:COMFORT--HUMIDITY--MIN . 40) (:COMFORT--TEMPERATURE--MAX . 27)
+ (:COMFORT--TEMPERATURE--MIN . 19) (:HUMIDITY . 58.1)
+ (:HUMIDITY--CALIBRATION . 0) (:LINKQUALITY . 192) (:TEMPERATURE . 20.7)
+ (:TEMPERATURE--CALIBRATION . 0) (:TEMPERATURE--UNITS . "celsius")
+ (:UPDATE (:INSTALLED--VERSION . 8960) (:LATEST--RELEASE--NOTES)
+  (:LATEST--SOURCE
+   . "https://raw.githubusercontent.com/Koenkk/zigbee-OTA/master/images/Sonoff/snzb-02d_v2.3.0.ota")
+  (:LATEST--VERSION . 8960) (:STATE . "idle")))
+#+end_src
+
+The name of the device is part of the value passed to the observer in order to be able to create observers that follow more than one subject.
+
+** Examples
+Definition of a temperature observer that switch on a smart plug when temperature is above a given alue:
+#+begin_src lisp
+(defclass temperature-observer (device-observer)
+  ()
+  (:documentation "An example of observer that do something when temperture changes."))
+#+end_src
+
+The update method must be overriden:
+#+begin_src lisp
+(defmethod update ((self temperature-observer) value)
+  "If temperature is above 19.5 switch smart plug on else switch off."
+  (if (> (rest (assoc :temperature value)) 19.5)
+      (progn
+        (format t "Temperature OK~%")
+        (switch-smart-plug1 :on))
+      (progn
+        (format t "It is cold here!~%")
+        (switch-smart-plug1 :off))))
+#+end_src
+
+A helper function that controls the switch:
+#+begin_src lisp
+(defun switch-smart-plug1 (on-or-off)
+  (publish "SmartPlug1" (list (cons "state" (if (eq on-or-off :on) "ON" "OFF")))))
+#+end_src
+
+To start this example:
+#+begin_src lisp
+(defun test-observable-observer-setup ()
+  (let* ((temp/humid-sensor (start-device "TempSensor1"))
+         (smart-plug (start-device "SmartPlug1"))
+         (obs (make-instance 'temperature-observer)))
+    (attach temp/humid-sensor obs)
+    (values temp/humid-sensor obs smart-plug)))  
+#+end_src
+
+More examples and informal tests (not unit tests) may be found in the ~test~ folder. 
+
+** Exported symbols
+
+*** ~start-device~ (name)
+A function that :
+  * take a name as argument. It must be the name of the device 
+  * creates an instance of ~device~
+  * runs a MQTT subscribe command to the physical device with same name.
+  * starts a thread that listen to the output of this process.
+
+*** ~publish~ (device message &key (qos 0))
+Method that publish a message to device ~DEVICE~ (name or instance). Message is an a-list that is converted to json. the quality of service is set with the QOS parameter.
+
+*** ~find-device~ (name)
+Returns a device instance given a device name if it exists.
+
+*** ~device-observer~ (class)
+~device-observer~ is the superclass of all observers.
+
+*** ~attach~ (subject observer)
+Attach an observer to the subject.
+
+*** ~detach~ (subject observer)
+Detatch an observer from the subject.
+
+** Missing features / TODOs
+
+  * deal with QOS on subscribe side.
+  * make it work with other implementations
+  * oops ! The subscribe method assumes the device is under topic zigbee2mqtt.   
+  * many more ?  
