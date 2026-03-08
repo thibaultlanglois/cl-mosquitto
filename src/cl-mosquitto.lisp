@@ -92,27 +92,6 @@ command (see SUBSCRIBE)."
            :name (format nil "~A-LISTENER" (device-name self)))))
     (setf (listening-thread self) thread)))
 
-#+nil
-(defmethod subscribe1 ((self device) &key (qos 0))
-  "Creates and runs a shell script that runs the mosquitto_sub command for DEVICE.
-Returns a process instance."
-  ;; TODO: experiment using directly mosquitto_sub without a shell script.
-  (let ((script-name (make-pathname :directory *mqtt-folder*
-                                    :name (device-name self)
-                                    :type "sh")))
-    (with-open-file (f script-name
-                       :direction :output
-                       :if-exists :supersede)
-      (format f "#!/bin/bash~%")
-      (format f
-              ;; "/usr/bin/mosquitto_sub -h localhost -u ~A -P ~A -q ~A -t zigbee2mqtt/~A -C 10~%"
-              "/usr/bin/mosquitto_sub -h localhost -u ~A -P ~A -q ~A -t zigbee2mqtt/~A ~%"
-              *mosquitto-user* *mosquitto-password* qos (device-name self))
-      (format f "echo 'done.'~%"))
-    (sb-ext:run-program "/bin/chmod" (list "u+x" (namestring script-name)))
-    (progn
-      (sb-ext:run-program script-name nil :output :stream :wait nil))))
-
 (defmethod subscribe ((self device) &key (qos 0))
   "Runs mosquitto_sub command for DEVICE. Returns a process instance."
   (sb-ext:run-program "/usr/bin/mosquitto_sub"
